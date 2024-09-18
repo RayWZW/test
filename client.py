@@ -5,10 +5,11 @@ import pyautogui
 import struct
 import threading
 import time
-from queue import Queue
+from queue import Queue, Full, Empty
 
-# Queue for storing encoded images
-frame_queue = Queue(maxsize=10)
+# Queues for storing encoded images
+primary_queue = Queue(maxsize=10)
+backup_queue = Queue(maxsize=10)
 
 def capture_screen():
     """Capture the screen and return it as a frame."""
@@ -18,7 +19,7 @@ def capture_screen():
     return frame
 
 def capture_thread():
-    capture_interval = 0.033  # Reduce to capture 3 times faster (1/3 of 0.1 seconds)
+    capture_interval = 0.033  # Capture 3 times faster (1/3 of 0.1 seconds)
     while True:
         try:
             # Capture the screen
@@ -28,13 +29,17 @@ def capture_thread():
             _, img_encoded = cv2.imencode('.jpg', frame)
             data = img_encoded.tobytes()
 
-            # Put the encoded data into the queue
-            if not frame_queue.full():
-                frame_queue.put(data)
-            else:
-                print("Queue is full, dropping frame.")
+            try:
+                # Try to put data in the primary queue
+                primary_queue.put(data, timeout=1)
+            except Full:
+                # If primary queue is full, put data in the backup queue
+                try:
+                    backup_queue.put(data, timeout=1)
+                except Full:
+                    print("Both queues are full, dropping frame.")
             
-            # Wait a bit before capturing the next frame
+            # Wait before capturing the next frame
             time.sleep(capture_interval)
         except Exception as e:
             print(f"Error capturing screenshot: {e}")
@@ -43,17 +48,22 @@ def capture_thread():
 def send_thread(client_socket):
     while True:
         try:
-            if not frame_queue.empty():
-                # Get the encoded data from the queue
-                data = frame_queue.get()
+            try:
+                # Try to get data from the primary queue
+                data = primary_queue.get(timeout=1)
+            except Empty:
+                # If primary queue is empty, try the backup queue
+                try:
+                    data = backup_queue.get(timeout=1)
+                except Empty:
+                    time.sleep(0.01)  # Wait if both queues are empty
+                    continue
 
-                # Send the size of the data first
-                client_socket.sendall(struct.pack("L", len(data)))
+            # Send the size of the data first
+            client_socket.sendall(struct.pack("L", len(data)))
 
-                # Send the actual data
-                client_socket.sendall(data)
-            else:
-                time.sleep(0.01)  # Wait a bit if the queue is empty
+            # Send the actual data
+            client_socket.sendall(data)
         except Exception as e:
             print(f"Error sending data: {e}")
             break
